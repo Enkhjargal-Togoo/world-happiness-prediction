@@ -1,0 +1,342 @@
+---
+title: "STAT5009 - Assessment 3"
+author: "GROUP 44: Enkhjargal Togoo (22056661), 
+         Dongwoo Kim (20470078),  
+         Anish Shrestha (22707053), 
+         Shaikh Thahsin Afraim (22949664),
+         Tafsir Harun"
+date: "2025-05-26"
+output: html_notebook
+---
+STEP1, import data and handling missing values
+```{r}
+# Import Happiness dataset
+df <- read.csv("Happiness-data.csv", header = TRUE)
+```
+```{r}
+#explore the dataset
+str(df)
+```
+```{r}
+summary(df)
+```
+```{r}
+head(df)
+```
+```{r}
+colSums(is.na(df))#check the missing value
+```
+```{r}
+# Select relevant columns which match our problem statement
+selected_data <- df[, -c(1, 2, 15:26)]
+dim(selected_data)
+```
+```{r}
+# Remove missing data
+df_model <- na.omit(selected_data)
+dim(df_model)
+```
+STEP2 Split data into training and test dataset
+```{r}
+n <- nrow(df_model)
+train_index <- sample(1:n,  #n: number of rows in our data
+                size = 0.8 * n) #drawing 80% of the data
+train_data <- df_model[train_index, ]  #training data
+test_data <- df_model[-train_index, ]  #testing data
+```
+STEP3: Exploratory analysis
+```{r}
+str(df_model)
+summary(df_model)
+pairs(df_model)  # scatterplot between all features
+cor(df_model)
+```
+```{r}
+#correlation heatmap
+cor_mat <- cor(df_model)
+install.packages("corrplot")
+library(corrplot)
+corrplot(cor_mat, main = "Correlation Heatmap", method = "circle", type = "upper", tl.col = "black", tl.srt = 45)
+```
+STEP4 Variable selection
+```{r}
+#Use subset selection method
+library(leaps)
+```
+```{r}
+# Forward regression for variable selection
+mod.forward <- regsubsets(Life.Ladder ~ .,
+                    data = train_data,
+                    method = "forward",
+                    nvmax = 12) # max number of predictor
+mod.forward.summary <- summary(mod.forward) # extract model summary
+plot(mod.forward.summary$adjr2,
+     main = "Forward Selection Summary",
+     type="b",
+     xlab="Number of vars", 
+     ylab = "Adjusted Rsq")
+```
+We observe that after the 8th variable the gain in adj_Rsqr is small
+so we restrict our model to the 8th selected feature
+```{r}
+coef(mod.forward,8) # extract the coefficients of the selected vars
+```
+The fitted model is
+y_hat=-1.09554104  + 0.32196092 Log.GDP.per.capita + 1.62492897 Social.support + 0.02376785 Healthy.life.expectancy.at.birth
+      + 0.60386347 Freedom.to.make.life.choices + 0.45955062 Generosity + -1.11611082 Perceptions.of.corruption +
+      + 2.15073235 Positive.affect + -0.79375100 Confidence.in.national.government
+```{r}
+# Backward regression for variable selection
+mod.backward <- regsubsets(Life.Ladder ~ .,
+                          data = train_data,
+                          method = "backward",
+                          nvmax = 12) # max number of predictor
+mod.backward.summary <- summary(mod.backward) # extract model summary
+plot(mod.backward.summary$adjr2, 
+     main = "Backward Selection Summary",
+     type="b",
+     xlab="Number of vars", 
+     ylab = "Adjusted Rsq")
+```
+We observe that backward selection output is exactly same as forward selection
+STEP5: Linear Regression model
+```{r}
+# Fit linear regression with selected 8 variables
+mod_lm <- lm(Life.Ladder ~ Log.GDP.per.capita + Social.support +
+                       Healthy.life.expectancy.at.birth + Freedom.to.make.life.choices +
+                       Generosity + Perceptions.of.corruption + Positive.affect +
+                       Confidence.in.national.government,
+                     data = train_data)
+summary(mod_lm)
+```
+```{r}
+#avoiding multicollinearity
+library(car)
+plot(vif(mod_lm),
+        ylab="VIF",
+        xlab="Variables",
+        main="Multicollinearity check")
+```
+None of the variables show high VIF (more than 5), so multicollinearity is not a major concern. 
+```{r}
+# RESIDUAL ANALYSIS
+res <- residuals(mod_lm)  #residuals
+fit <- fitted.values(mod_lm) # y_hat
+plot(x = fit, y = res, main = "Residuals vs Fitted Values")
+abline(h = 0, col = "red")
+```
+ There is no strong U shape or pattern, residual centered around 0. mostly supporting linearity. 
+Small increase in variance is observed, but not required to validate the model. 
+```{r}
+# Predict on test data
+pred_lm <- predict(mod_lm, newdata = test_data)
+```
+```{r}
+# Compute test MSE
+mse_lm <- mean((test_data$Life.Ladder - pred_lm)^2)
+mse_lm
+```
+```{r}
+# Fit linear regression with selected 7 variables without Positive affect
+mod2_lm <- lm(Life.Ladder ~ Log.GDP.per.capita + Social.support +
+               Healthy.life.expectancy.at.birth + Freedom.to.make.life.choices +
+               Generosity + Perceptions.of.corruption +
+               Confidence.in.national.government,
+             data = train_data)
+summary(mod2_lm)
+```
+```{r}
+# Predict on test data
+pred2_lm <- predict(mod2_lm, newdata = test_data)
+```
+```{r}
+# Compute test MSE
+mse2_lm <- mean((test_data$Life.Ladder - pred2_lm)^2)
+mse2_lm
+```
+Compare with MSE
+mse_lm        # 8 vars
+mse2_lm       # 7 vars without Positive affect
+Prediction loss is increased without Positive affect
+
+STEP6 RANDOM FOREST
+```{r}
+# Load library
+library(randomForest)
+```
+```{r}
+# Fit Random Forest
+# Train the model with all variables first to show importance of features
+mod_rf <- randomForest(Life.Ladder ~ .,
+                       data = train_data,
+                       ntree = 100)  # number of trees
+print(mod_rf)  # Shows MSE and % variance explained
+summary(mod_rf)
+```
+```{r}
+# Predict on test data
+pred_rf <- predict(mod_rf, newdata = test_data)
+```
+```{r}
+# Compute MSE
+mse_rf <- mean((test_data$Life.Ladder - pred_rf)^2)
+mse_rf
+```
+```{r}
+# Plot feature importance
+varImpPlot(mod_rf, main = "Variable Importance - Random Forest")
+```
+Delivery.Quality goes 3rd important var which was not significant in Linear regression
+```{r}
+#Second Random Forest to check with first 8 High important variables
+mod2_rf <- randomForest(Life.Ladder ~ Healthy.life.expectancy.at.birth + Log.GDP.per.capita + 
+                          Delivery.Quality + Social.support + Positive.affect + Democratic.Quality + 
+                          Perceptions.of.corruption + Freedom.to.make.life.choices,
+                       data = train_data,
+                       ntree = 100)  # number of bootsrap trees
+print(mod2_rf)  # Shows MSE and % variance explained
+```
+```{r}
+# Predict on test data
+pred2_rf <- predict(mod2_rf, newdata = test_data)
+```
+```{r}
+# Compute MSE
+mse2_rf <- mean((test_data$Life.Ladder - pred2_rf)^2)
+mse2_rf
+```
+```{r}
+#Third Random Forest to check with first 7 High important variables without including Positive affect
+mod3_rf <- randomForest(Life.Ladder ~ Healthy.life.expectancy.at.birth + Log.GDP.per.capita + 
+                          Delivery.Quality + Social.support + Democratic.Quality + 
+                          Perceptions.of.corruption + Freedom.to.make.life.choices,
+                        data = train_data,
+                        ntree = 100)  # number of bootsrap trees
+print(mod3_rf)  # Shows MSE and % variance explained
+
+```
+```{r}
+# Predict on test data
+pred3_rf <- predict(mod3_rf, newdata = test_data)
+```
+```{r}
+# Compute MSE
+mse3_rf <- mean((test_data$Life.Ladder - pred3_rf)^2)
+mse3_rf
+```
+STEP7 KNN
+```{r}
+library(readr)
+library(caret)
+library(dplyr)
+```
+```{r}
+# Select relevant variables
+vars_7 <- c("Healthy.life.expectancy.at.birth",
+            "Log.GDP.per.capita",
+            "Social.support",
+            "Negative.affect",
+            "Perceptions.of.corruption",
+            "Freedom.to.make.life.choices",
+            "Generosity")
+
+vars_8 <- c(vars_7, "Positive.affect")
+
+vars_11 <- c("Healthy.life.expectancy.at.birth",
+             "Log.GDP.per.capita",
+             "Delivery.Quality",
+             "Social.support",
+             "Positive.affect",
+             "Democratic.Quality",
+             "Perceptions.of.corruption",
+             "Freedom.to.make.life.choices",
+             "Generosity",
+             "Confidence.in.national.government",
+             "Negative.affect")
+
+target <- "Life.Ladder"
+```
+```{r}
+# Function to run KNN and return MSE and R2
+run_knn <- function(features, target, k = 5) {
+  # features: vector of column names to use as predictors
+  # target: name of target column (e.g., "Life.Ladder")
+
+  # Subset the features for train and test sets
+  X_train <- train_data[, features]
+  X_test <- test_data[, features]
+  
+  y_train <- train_data[[target]]
+  y_test <- test_data[[target]]
+
+  # Train k-NN model with preprocessing (scaling)
+  model <- train(
+    x = X_train,
+    y = y_train,
+    method = "knn",
+    preProcess = c("center", "scale"),
+    tuneGrid = data.frame(k = k)
+  )
+
+  # Predict on test data
+  preds <- predict(model, X_test)
+  
+  # Metrics
+  mse <- mean((preds - y_test)^2)
+  r2 <- cor(preds, y_test)^2
+  
+  # Adjusted R2
+  n <- length(y_test)       # number of test observations
+  p <- length(features)     # number of predictors
+  adj_r2 <- 1 - ((1 - r2) * (n - 1) / (n - p - 1))
+
+  return(c(MSE = round(mse, 4), Adjusted_R2 = round(adj_r2, 4)))
+}
+```
+```{r}
+# Run for all 3 feature sets
+res_7 <- run_knn(vars_7, target)
+res_8 <- run_knn(vars_8, target)
+res_11 <- run_knn(vars_11, target)
+```
+```{r}
+# Output
+cat("KNN Results (k=5)\n")
+cat("----------------------\n")
+cat("7 variables:\n")
+cat("  MSE:", res_7['MSE'], " | R2:", res_7['Adjusted_R2'], "\n\n")
+cat("8 variables:\n")
+cat("  MSE:", res_8['MSE'], " | R2:", res_8['Adjusted_R2'], "\n\n")
+cat("11 variables:\n")
+cat("  MSE:", res_11['MSE'], " | R2:", res_11['Adjusted_R2'], "\n")
+```
+STEP 8 COMPARISON OF MODEL OUTPUT
+```{r}
+# Comparing model outputs based on MSEs. 
+mse_values <- c(
+  mse_lm = mse_lm,          # Linear regression 8 vars
+  mse2_lm = mse2_lm,        # Linear regression 7 vars
+  mse_rf = mse_rf,          # Random Forest full model
+  mse2_rf = mse2_rf,        # RF with top 8
+  mse3_rf = mse3_rf,        # RF with top 7 without positive emotion
+  mse_knn = res_7['MSE'],   #KNN 7 vars
+  mse_knn2 = res_8['MSE'],  #KNN 8 vars
+  mse_knn3 = res_11['MSE']  #KNN 11 vars
+)
+
+# Bar plot
+barplot(mse_values,
+        main = "Model Comparison: Mean Squared Error (MSE)",
+        col = "green",
+        ylab = "MSE",
+        xlab = "Model",
+        ylim = c(0, max(mse_values) + 0.05),
+        las = 1)
+```
+
+```{r}
+# smallest MSE
+best_model <- names(which.min(mse_values))
+best_mse <- min(mse_values)
+cat("Best model:", best_model, " Best MSE:", best_mse)
+```
