@@ -44,7 +44,7 @@ Furthermore, emotions do help explain happiness levels, especially in the contex
 All of these models had better performance with positive emotions
 
 ## Repository structure
-- notebooks/  – experiments and modelling notebooks
+- rmd/  – experiments and modelling R codes
 - assets/     – plots and figures
 
 ## How to run
